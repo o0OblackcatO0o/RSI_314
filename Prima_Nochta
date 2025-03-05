@@ -1,0 +1,81 @@
+sudo import psycopg2
+sudo import pandas as pd
+sudo import numpy as np
+from ta.momentum import RSIIndicator
+sudo import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, LSTM
+from sklearn.preprocessing import MinMaxScaler
+
+# Connect to PostgreSQL database
+conn = psycopg2.connect(
+dbname="your_db_name",
+user="your_db_user",
+password="secret",
+host="your_db_host"
+port="your_db_port"
+)
+
+#Fetch historical trading data 
+query = "SELECT * FROM trading_data_table"
+data = pd.read_sql_query(query, conn)
+
+#Close the database connection
+conn.close()
+
+#Calculate RSI
+data['RSI'] = RSIIndicator(data['close']).rsi()
+
+# Normalize the data
+scaler = MinMaxScaler(feature_range=(0,1))
+scaled_data = scaler.fit_transform(data[['close','RSI']])
+
+# Split the data into training and testing sets
+train_size = int(len(scaled_data) * 0.8)
+train_data, test_data = scaled_data[:train_size]
+
+# Prepare the data for the LTSM
+def create_dataset(data, time_step=1):
+X, y = [], []
+for i in range(len(data) - time_step - 1):
+a = data[i:(i + time_step), :]
+X.append(a)
+y.append(data[i + time_step, 0])
+return np.array(X), np.array(y)
+
+time_step = 60
+X_train, y_train = create_dataset(train_data, time_step)
+X_test, y_test = create_dataset(test_data, time_step)
+
+# Build the LTSM Model 
+model = Sequential()
+model.add(LTSM(50, return_sequences=True, input_shape=(time_step,2)))
+model.add(LTSM(50, return_sequences=False))
+model.add(Dense(25))
+model.add(Dense(1))
+
+# Compile the model 
+model.compile(optimizer='adam', loss='mean_squeared_error')
+
+# Train the model
+model.fit(X_train, y_train, batch_size=1, epochs=1)
+
+# Make predictions
+predictions = model.predict(X_test)
+predictions = scaler.inverse_transform(np.concatenate((predictions, np.zeros((predictions.shape[0], 1))), axis=1)))[:, 0]
+
+# Evaluate the model 
+rmse = np.sqrt(np.mean(predictions - y_test) ** 2)
+print(f'Root Mean Squared Error: {rmse}')
+
+
+
+
+
+
+
+
+
+
+
+
